@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, CheckCircle2, EyeOff } from "lucide-react";
 
 type LineItem = {
   id: string;
@@ -30,6 +30,13 @@ type LineItem = {
   price_source: string | null;
   authenticity_status: string;
   authenticity_notes: string | null;
+};
+
+type DealSummary = {
+  status: string | null;
+  flag_reasons: string[] | null;
+  reviewed_at: string | null;
+  dismissed: boolean;
 };
 
 export function DealDetailDialog({
@@ -45,6 +52,8 @@ export function DealDetailDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
+
   const { data: lineItems, isLoading } = useQuery({
     queryKey: ["line_items", listingId],
     queryFn: async () => {
@@ -60,6 +69,33 @@ export function DealDetailDialog({
     enabled: open && !!listingId,
   });
 
+  const { data: summary } = useQuery({
+    queryKey: ["deal_summary", listingId],
+    queryFn: async () => {
+      if (!listingId) return null;
+      const { data, error } = await supabase
+        .from("deals_feed")
+        .select("status, flag_reasons, reviewed_at, dismissed")
+        .eq("listing_id", listingId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as DealSummary | null;
+    },
+    enabled: open && !!listingId,
+  });
+
+  const updateListing = useMutation({
+    mutationFn: async (patch: Partial<Pick<DealSummary, "dismissed" | "reviewed_at">>) => {
+      if (!listingId) return;
+      const { error } = await supabase.from("listings").update(patch).eq("id", listingId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["deals_feed"] });
+      queryClient.invalidateQueries({ queryKey: ["deal_summary", listingId] });
+    },
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -68,13 +104,44 @@ export function DealDetailDialog({
           <DialogDescription>Line-item breakdown behind this deal's score.</DialogDescription>
         </DialogHeader>
 
-        {externalUrl && (
-          <Button variant="outline" size="sm" asChild className="w-fit">
-            <a href={externalUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="mr-2 h-4 w-4" />
-              View original listing
-            </a>
+        <div className="flex flex-wrap gap-2">
+          {externalUrl && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View original listing
+              </a>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              updateListing.mutate({ reviewed_at: summary?.reviewed_at ? null : new Date().toISOString() })
+            }
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            {summary?.reviewed_at ? "Mark unreviewed" : "Mark reviewed"}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => updateListing.mutate({ dismissed: !summary?.dismissed })}
+          >
+            <EyeOff className="mr-2 h-4 w-4" />
+            {summary?.dismissed ? "Restore" : "Dismiss"}
+          </Button>
+        </div>
+
+        {summary?.flag_reasons && summary.flag_reasons.length > 0 && (
+          <div className="rounded-md border border-border bg-muted/50 p-3">
+            <p className="mb-2 text-xs font-medium text-foreground">Why this status:</p>
+            <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+              {summary.flag_reasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {isLoading && (

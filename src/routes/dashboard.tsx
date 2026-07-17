@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { LoginForm } from "@/components/login-form";
@@ -11,6 +11,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
   Table,
   TableBody,
   TableCell,
@@ -18,7 +36,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, RefreshCw, ShieldAlert, ExternalLink } from "lucide-react";
+import {
+  Search,
+  RefreshCw,
+  ShieldAlert,
+  ExternalLink,
+  MoreHorizontal,
+  CheckCircle2,
+  EyeOff,
+  Info,
+} from "lucide-react";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -52,6 +79,9 @@ type DealRow = {
   total_item_count: number | null;
   computed_at: string | null;
   external_url: string | null;
+  reviewed_at: string | null;
+  dismissed: boolean;
+  flag_reasons: string[] | null;
 };
 
 const STATUS_PRIORITY: Record<string, number> = {
@@ -87,8 +117,16 @@ function StatusBadge({ status }: { status: string | null }) {
 
 function Dashboard() {
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [selectedListing, setSelectedListing] = useState<{ id: string; title: string; externalUrl: string | null } | null>(null);
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [minProfit, setMinProfit] = useState<string>("");
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<{
+    id: string;
+    title: string;
+    externalUrl: string | null;
+  } | null>(null);
 
   const { data: deals, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["deals_feed"],
@@ -103,21 +141,43 @@ function Dashboard() {
     enabled: isAuthenticated,
   });
 
+  const updateListing = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<Pick<DealRow, "dismissed" | "reviewed_at">> }) => {
+      const { error } = await supabase.from("listings").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["deals_feed"] });
+    },
+  });
+
+  const platforms = useMemo(() => {
+    const set = new Set((deals ?? []).map((d) => d.platform));
+    return Array.from(set);
+  }, [deals]);
+
   const sortedDeals = useMemo(() => {
     if (!deals) return [];
-    const filtered = search.trim()
-      ? deals.filter((d) => d.title.toLowerCase().includes(search.trim().toLowerCase()))
-      : deals;
+    const minProfitNum = minProfit.trim() ? parseFloat(minProfit) : null;
+
+    const filtered = deals.filter((d) => {
+      if (!showDismissed && d.dismissed) return false;
+      if (search.trim() && !d.title.toLowerCase().includes(search.trim().toLowerCase())) return false;
+      if (platformFilter !== "all" && d.platform !== platformFilter) return false;
+      if (minProfitNum != null && (d.estimated_profit == null || d.estimated_profit < minProfitNum)) return false;
+      return true;
+    });
+
     return [...filtered].sort((a, b) => {
       const pa = STATUS_PRIORITY[a.status ?? ""] ?? 9;
       const pb = STATUS_PRIORITY[b.status ?? ""] ?? 9;
       if (pa !== pb) return pa - pb;
       return (b.estimated_profit ?? -Infinity) - (a.estimated_profit ?? -Infinity);
     });
-  }, [deals, search]);
+  }, [deals, search, platformFilter, minProfit, showDismissed]);
 
   const actionableCount = useMemo(
-    () => (deals ?? []).filter((d) => d.status === "buy" || d.status === "negotiate").length,
+    () => (deals ?? []).filter((d) => !d.dismissed && (d.status === "buy" || d.status === "negotiate")).length,
     [deals],
   );
 
@@ -155,8 +215,8 @@ function Dashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
+            <div className="relative flex-1 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Filter by title..."
@@ -165,6 +225,38 @@ function Dashboard() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+
+            <Select value={platformFilter} onValueChange={setPlatformFilter}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Platform" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All platforms</SelectItem>
+                {platforms.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Input
+              type="number"
+              placeholder="Min profit ($)"
+              className="w-full sm:w-[140px]"
+              value={minProfit}
+              onChange={(e) => setMinProfit(e.target.value)}
+            />
+
+            <Button
+              type="button"
+              variant={showDismissed ? "secondary" : "outline"}
+              onClick={() => setShowDismissed((v) => !v)}
+            >
+              <EyeOff className="mr-2 h-4 w-4" />
+              {showDismissed ? "Hiding dismissed: off" : "Show dismissed"}
+            </Button>
+
             <Button type="button" variant="outline" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
@@ -192,7 +284,9 @@ function Dashboard() {
             <div className="flex min-h-[12rem] flex-col items-center justify-center rounded-md border border-dashed border-border bg-muted/50 p-8 text-center">
               <p className="text-sm font-medium text-foreground">No deals match</p>
               <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-                {search ? "Try a different search term." : "The hourly scan hasn't found anything yet."}
+                {search || platformFilter !== "all" || minProfit
+                  ? "Try loosening your filters."
+                  : "The hourly scan hasn't found anything yet."}
               </p>
             </div>
           )}
@@ -205,22 +299,47 @@ function Dashboard() {
                   <TableHead>Asking</TableHead>
                   <TableHead className="text-right">Est. Profit</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedDeals.map((deal) => (
                   <TableRow
                     key={deal.listing_id}
-                    className="cursor-pointer"
+                    className={`cursor-pointer ${deal.dismissed ? "opacity-50" : ""}`}
                     onClick={() =>
-                      setSelectedListing({ id: deal.listing_id, title: deal.title, externalUrl: deal.external_url })
+                      setSelectedListing({
+                        id: deal.listing_id,
+                        title: deal.title,
+                        externalUrl: deal.external_url,
+                      })
                     }
                   >
                     <TableCell className="max-w-md">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">{deal.title}</span>
+                        {deal.reviewed_at && (
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
                         {deal.seller_flagged && (
                           <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
+                        )}
+                        {deal.flag_reasons && deal.flag_reasons.length > 0 && (
+                          <HoverCard>
+                            <HoverCardTrigger asChild>
+                              <span onClick={(e) => e.stopPropagation()}>
+                                <Info className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              </span>
+                            </HoverCardTrigger>
+                            <HoverCardContent className="w-80" onClick={(e) => e.stopPropagation()}>
+                              <p className="mb-2 text-xs font-medium text-foreground">Why this status:</p>
+                              <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                                {deal.flag_reasons.map((reason, i) => (
+                                  <li key={i}>{reason}</li>
+                                ))}
+                              </ul>
+                            </HoverCardContent>
+                          </HoverCard>
                         )}
                         {deal.external_url && (
                           <a
@@ -258,6 +377,37 @@ function Dashboard() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={deal.status} />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              updateListing.mutate({
+                                id: deal.listing_id,
+                                patch: { reviewed_at: deal.reviewed_at ? null : new Date().toISOString() },
+                              })
+                            }
+                          >
+                            {deal.reviewed_at ? "Mark unreviewed" : "Mark reviewed"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              updateListing.mutate({
+                                id: deal.listing_id,
+                                patch: { dismissed: !deal.dismissed },
+                              })
+                            }
+                          >
+                            {deal.dismissed ? "Restore" : "Dismiss"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}
