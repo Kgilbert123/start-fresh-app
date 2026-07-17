@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { Button } from "@/components/ui/button";
 
 function NotFoundComponent() {
   return (
@@ -77,11 +78,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "DealScout — Find profitable deals across marketplaces" },
+      { name: "description", content: "A clean deal scanner that surfaces profitable purchases from eBay and other marketplaces." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "DealScout — Find profitable deals across marketplaces" },
+      { property: "og:description", content: "A clean deal scanner that surfaces profitable purchases from eBay and other marketplaces." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
@@ -114,13 +115,43 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+function Header() {
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+        <Link to="/" className="flex items-center gap-2 font-semibold text-foreground">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+            D
+          </span>
+          DealScout
+        </Link>
+        <nav className="flex items-center gap-4">
+          <Link
+            to="/dashboard"
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Dashboard
+          </Link>
+          <Button asChild size="sm">
+            <Link to="/dashboard">Open app</Link>
+          </Button>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <div className="flex min-h-screen flex-col">
+        <Header />
+        <main className="flex-1">
+          <Outlet />
+        </main>
+      </div>
     </QueryClientProvider>
   );
 }
