@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, RefreshCw, ShieldAlert } from "lucide-react";
+import { Search, RefreshCw, ShieldAlert, ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -51,6 +51,7 @@ type DealRow = {
   priced_item_count: number | null;
   total_item_count: number | null;
   computed_at: string | null;
+  external_url: string | null;
 };
 
 const STATUS_PRIORITY: Record<string, number> = {
@@ -87,7 +88,7 @@ function StatusBadge({ status }: { status: string | null }) {
 function Dashboard() {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const [search, setSearch] = useState("");
-  const [selectedListing, setSelectedListing] = useState<{ id: string; title: string } | null>(null);
+  const [selectedListing, setSelectedListing] = useState<{ id: string; title: string; externalUrl: string | null } | null>(null);
 
   const { data: deals, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["deals_feed"],
@@ -211,13 +212,27 @@ function Dashboard() {
                   <TableRow
                     key={deal.listing_id}
                     className="cursor-pointer"
-                    onClick={() => setSelectedListing({ id: deal.listing_id, title: deal.title })}
+                    onClick={() =>
+                      setSelectedListing({ id: deal.listing_id, title: deal.title, externalUrl: deal.external_url })
+                    }
                   >
                     <TableCell className="max-w-md">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium">{deal.title}</span>
                         {deal.seller_flagged && (
                           <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
+                        )}
+                        {deal.external_url && (
+                          <a
+                            href={deal.external_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                            title="View original listing"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -255,6 +270,7 @@ function Dashboard() {
       <DealDetailDialog
         listingId={selectedListing?.id ?? null}
         title={selectedListing?.title ?? null}
+        externalUrl={selectedListing?.externalUrl ?? null}
         open={!!selectedListing}
         onOpenChange={(open) => !open && setSelectedListing(null)}
       />

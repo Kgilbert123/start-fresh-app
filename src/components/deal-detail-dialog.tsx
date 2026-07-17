@@ -8,6 +8,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -17,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ExternalLink } from "lucide-react";
 
 type LineItem = {
   id: string;
@@ -33,11 +35,13 @@ type LineItem = {
 export function DealDetailDialog({
   listingId,
   title,
+  externalUrl,
   open,
   onOpenChange,
 }: {
   listingId: string | null;
   title: string | null;
+  externalUrl?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -63,6 +67,15 @@ export function DealDetailDialog({
           <DialogTitle className="pr-6">{title}</DialogTitle>
           <DialogDescription>Line-item breakdown behind this deal's score.</DialogDescription>
         </DialogHeader>
+
+        {externalUrl && (
+          <Button variant="outline" size="sm" asChild className="w-fit">
+            <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink className="mr-2 h-4 w-4" />
+              View original listing
+            </a>
+          </Button>
+        )}
 
         {isLoading && (
           <div className="flex flex-col gap-2">
